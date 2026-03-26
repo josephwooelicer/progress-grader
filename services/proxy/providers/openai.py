@@ -1,9 +1,12 @@
-"""OpenAI provider adapter."""
+"""OpenAI-compatible provider adapter (OpenAI, AIMLAPI, Azure, Ollama, etc.)."""
+import os
 from typing import AsyncIterator
 
 import httpx
 
 from providers import ProviderChunk
+
+_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 async def stream_chat(
@@ -11,6 +14,7 @@ async def stream_chat(
     api_key: str,
     messages: list[dict],
 ) -> AsyncIterator[ProviderChunk]:
+    base_url = os.environ.get("DEFAULT_BASE_URL", "").rstrip("/") or _DEFAULT_BASE_URL
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -25,7 +29,7 @@ async def stream_chat(
     async with httpx.AsyncClient(timeout=120.0) as client:
         async with client.stream(
             "POST",
-            "https://api.openai.com/v1/chat/completions",
+            f"{base_url}/chat/completions",
             json=body,
             headers=headers,
         ) as resp:

@@ -1,0 +1,40 @@
+{
+  "name": "progress-grader",
+  "displayName": "Progress Grader",
+  "description": "AI coding assistant for Progress Grader — routes all AI calls through the platform proxy.",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "progressGrader.openChat",
+        "title": "Progress Grader: Open Chat"
+      },
+      {
+        "command": "progressGrader.newConversation",
+        "title": "Progress Grader: New Conversation"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "progressGrader.openChat",
+        "key": "ctrl+shift+a",
+        "mac": "cmd+shift+a"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "typescript": "^5.3.0"
+  }
+}

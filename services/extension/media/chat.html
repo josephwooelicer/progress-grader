@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Progress Grader Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-editor-foreground);
+      background: var(--vscode-editor-background);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: var(--vscode-editorGroupHeader-tabsBackground);
+      border-bottom: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+    }
+    #toolbar span { font-size: 12px; opacity: 0.7; }
+    #context-bar {
+      height: 3px;
+      background: var(--vscode-progressBar-background);
+      transition: width 0.3s;
+    }
+    #new-conv-btn {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+      border: none;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: 11px;
+      border-radius: 3px;
+    }
+    #new-conv-btn:hover { opacity: 0.8; }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .message.user {
+      align-self: flex-end;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    .message.assistant {
+      align-self: flex-start;
+      background: var(--vscode-editorWidget-background);
+      border: 1px solid var(--vscode-panel-border);
+    }
+    .message.error {
+      align-self: center;
+      background: var(--vscode-inputValidation-errorBackground);
+      color: var(--vscode-inputValidation-errorForeground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      font-size: 12px;
+    }
+    .message.streaming::after {
+      content: "▋";
+      animation: blink 0.7s infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    #input-area {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      border-top: 1px solid var(--vscode-panel-border);
+      flex-shrink: 0;
+      background: var(--vscode-editor-background);
+    }
+    #input {
+      flex: 1;
+      resize: none;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      padding: 6px 8px;
+      font-family: inherit;
+      font-size: inherit;
+      border-radius: 4px;
+      min-height: 36px;
+      max-height: 120px;
+    }
+    #input:focus { outline: 1px solid var(--vscode-focusBorder); }
+    #send-btn {
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      padding: 6px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      align-self: flex-end;
+    }
+    #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #send-btn:hover:not(:disabled) { background: var(--vscode-button-hoverBackground); }
+
+    #usage-label {
+      font-size: 11px;
+      opacity: 0.6;
+      padding: 0 10px 4px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+    #usage-label.warn { color: var(--vscode-editorWarning-foreground); opacity: 1; }
+    #usage-label.danger { color: var(--vscode-editorError-foreground); opacity: 1; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <span id="conv-label">Conversation</span>
+    <button id="new-conv-btn">+ New Conversation</button>
+  </div>
+  <div id="context-bar-wrap" style="background: var(--vscode-panel-border);">
+    <div id="context-bar" style="width: 0%; height: 3px;"></div>
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="usage-label">Context: 0%</div>
+  <div id="input-area">
+    <textarea id="input" placeholder="Ask anything…" rows="1"></textarea>
+    <button id="send-btn">Send</button>
+  </div>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send-btn');
+    const usageLabel = document.getElementById('usage-label');
+    const contextBar = document.getElementById('context-bar');
+    const convLabel = document.getElementById('conv-label');
+    const newConvBtn = document.getElementById('new-conv-btn');
+
+    let streaming = false;
+    let currentAssistantEl = null;
+
+    function setUsage(pct) {
+      contextBar.style.width = pct + '%';
+      usageLabel.textContent = `Context: ${pct}%`;
+      usageLabel.className = pct >= 90 ? 'danger' : pct >= 70 ? 'warn' : '';
+      // Change bar color
+      if (pct >= 90) {
+        contextBar.style.background = 'var(--vscode-editorError-foreground)';
+      } else if (pct >= 70) {
+        contextBar.style.background = 'var(--vscode-editorWarning-foreground)';
+      } else {
+        contextBar.style.background = 'var(--vscode-progressBar-background)';
+      }
+    }
+
+    function appendMessage(role, content) {
+      const el = document.createElement('div');
+      el.className = `message ${role}`;
+      el.textContent = content;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return el;
+    }
+
+    function setStreaming(isStreaming) {
+      streaming = isStreaming;
+      sendBtn.disabled = isStreaming;
+      inputEl.disabled = isStreaming;
+      if (!isStreaming && currentAssistantEl) {
+        currentAssistantEl.classList.remove('streaming');
+        currentAssistantEl = null;
+      }
+    }
+
+    function send() {
+      const text = inputEl.value.trim();
+      if (!text || streaming) return;
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+      appendMessage('user', text);
+      currentAssistantEl = appendMessage('assistant', '');
+      currentAssistantEl.classList.add('streaming');
+      setStreaming(true);
+      vscode.postMessage({ type: 'send', text });
+    }
+
+    sendBtn.addEventListener('click', send);
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+
+    newConvBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'newConversation' });
+    });
+
+    // Messages from extension host
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      switch (msg.type) {
+        case 'chunk':
+          if (currentAssistantEl && msg.delta) {
+            currentAssistantEl.textContent += msg.delta;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          }
+          if (msg.context_usage_pct !== undefined) {
+            setUsage(msg.context_usage_pct);
+          }
+          break;
+        case 'done':
+          setStreaming(false);
+          if (msg.context_usage_pct !== undefined) setUsage(msg.context_usage_pct);
+          break;
+        case 'error':
+          setStreaming(false);
+          if (currentAssistantEl) {
+            currentAssistantEl.remove();
+            currentAssistantEl = null;
+          }
+          appendMessage('error', msg.message);
+          break;
+        case 'newConversation':
+          messagesEl.innerHTML = '';
+          convLabel.textContent = 'New Conversation';
+          setUsage(0);
+          break;
+        case 'conversationId':
+          convLabel.textContent = `Conv: ${msg.id.slice(0, 8)}…`;
+          break;
+        case 'usage':
+          setUsage(msg.pct);
+          break;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,13 +1,31 @@
 """Docker-based workspace lifecycle management."""
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import docker
+import jwt
 from docker.errors import NotFound
 from docker.models.containers import Container
 
 from app.config import settings
 from app.models.workspace import Workspace
+
+
+def _workspace_token(student_id: uuid.UUID, project_id: uuid.UUID, workspace_id: uuid.UUID) -> str:
+    """Generate a long-lived JWT scoped to this workspace for the VS Code extension."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(student_id),
+        "role": "student",
+        "workspace_id": str(workspace_id),
+        "project_id": str(project_id),
+        "iat": now,
+        # Extension token valid for 90 days — refreshed on workspace re-provision
+        "exp": now + timedelta(days=90),
+        "type": "workspace",
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 _WORKSPACE_IMAGE = "progress-grader/workspace:latest"
 _NETWORK = "progress-grader"
@@ -59,7 +77,11 @@ def create_container(workspace: Workspace, resource_overrides: dict | None) -> t
             "STUDENT_ID": str(workspace.student_id),
             "PROJECT_ID": str(workspace.project_id),
             "WORKSPACE_ID": str(workspace.id),
-            "BACKEND_URL": f"http://backend:8000",
+            "BACKEND_URL": settings.backend_url,
+            "PROXY_URL": settings.proxy_url,
+            "PLATFORM_TOKEN": _workspace_token(
+                workspace.student_id, workspace.project_id, workspace.id
+            ),
         },
         **_resource_kwargs(resource_overrides),
     )
