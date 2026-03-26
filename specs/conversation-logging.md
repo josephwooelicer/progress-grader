@@ -91,6 +91,7 @@ CREATE TABLE conversations (
     id              UUID PRIMARY KEY,   -- client-generated, from extension
     student_id      UUID NOT NULL REFERENCES users(id),
     project_id      UUID NOT NULL REFERENCES projects(id),
+    system_prompt   TEXT,               -- platform/project system prompt at time of conversation; admin-visible only
     started_at      TIMESTAMPTZ NOT NULL,
     last_message_at TIMESTAMPTZ NOT NULL,
     message_count   INTEGER NOT NULL DEFAULT 0,
@@ -158,7 +159,7 @@ Teacher requests conversation data
 - Students can view their own conversation history per project within the IDE extension (read-only, self-reflection). This is served by the same API as the teacher view but scoped to the authenticated student's own data only.
 - Consent is per-project. A student must consent separately for each project before any conversation data for that project is logged or viewable by the teacher. The consent modal references the specific project and teacher name.
 - Soft delete. Student accounts are marked `deleted_at` (never hard deleted). All conversation logs and git events are retained and remain queryable by admins. Teachers lose access once the account is soft-deleted.
-- [ ] Should we store the system prompt sent to the provider, or only the student-authored messages?
+- System prompt stored in a dedicated `system_prompt` column on the `conversations` table (not mixed into `conversation_messages`). Teacher view shows only student/assistant messages; system prompt visible to admins only for auditing.
 
 ## 12. References
 
