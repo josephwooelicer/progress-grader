@@ -4,7 +4,32 @@ This file provides guidance to Claude Code when working in this repository.
 
 ## Project Overview
 
-> **TODO:** Fill in project description after initial setup.
+**Progress Grader** is a school-focused agentic coding platform that evaluates students not just on their final code, but on *how* they used AI to get there — their prompts, problem decomposition, branching strategy, commit granularity, spec-driven design adherence, and context management.
+
+Teachers get a dashboard to review full student–AI conversation histories (with student consent), alongside Git activity (commits, branches, PRs) captured from each student's isolated workspace.
+
+### Key Concepts
+- Each student gets one sandboxed container per project (no context bleed between projects or students)
+- All AI calls are routed through a platform-owned proxy — never directly to the AI provider
+- Every prompt and response is logged server-side, consent-gated, and surfaced to teachers for grading
+- Git activity (commits, branches, PRs) is a grading signal alongside conversation quality
+
+## Finalized Architecture
+
+| Layer | Technology |
+|---|---|
+| Workspace IDE | OpenVSCode Server (one container per student per project) |
+| AI agent UI | Custom VS Code Extension (routes all calls through backend) |
+| AI proxy | Thin custom FastAPI proxy (pluggable providers) |
+| AI models | OpenAI, Anthropic, Azure, Ollama — configurable |
+| Git (local) | Git inside each container |
+| Git (hosted) | Gitea (self-hosted, teacher-facing) |
+| Database | PostgreSQL |
+| Auth | Keycloak (SSO-ready) or Better Auth |
+| Orchestration | Docker + Traefik → Kubernetes (when needed) |
+| Background jobs | Celery + Redis |
+| Teacher dashboard | Next.js + shadcn/ui |
+| Languages | Python (backend), TypeScript (extension + dashboard) |
 
 ## Spec-Driven Design Workflow
 
@@ -32,7 +57,9 @@ tests/          # Tests (mirror spec acceptance criteria)
 - Each spec file should follow the template in `specs/TEMPLATE.md`.
 - Design documents should reference the spec they are derived from.
 - Keep specs updated when requirements change — the spec is the source of truth.
+- All AI calls must go through the platform proxy — never call AI providers directly from the extension or frontend.
+- Student conversation data is consent-gated — enforce at the API layer, not just the UI.
 
 ## Commands
 
-> **TODO:** Add build, test, and run commands once the stack is decided.
+> **TODO:** Add build, test, and run commands once initial implementation begins.
