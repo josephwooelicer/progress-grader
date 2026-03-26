@@ -40,6 +40,8 @@ Each student workspace has a local Git repository. A self-hosted Gitea instance 
 | FR-8 | The platform backend consumes webhook events and writes structured grading signal records to PostgreSQL | Must |
 | FR-9 | Gitea repositories are organised under a per-course organisation (e.g. `gitea.domain/course-cs101/`) | Should |
 | FR-10 | Students cannot access other students' Gitea repositories | Must |
+| FR-11 | Each project has a teacher-defined base skeleton (files/folders uploaded or defined at project creation time) | Must |
+| FR-12 | At workspace creation, the platform commits the base skeleton as the first commit using a platform bot user identity | Must |
 
 ### Non-Functional Requirements
 
@@ -142,7 +144,7 @@ On workspace creation:
 
 ## 12. Open Questions
 
-- [ ] Should the initial commit (repo setup) be made automatically at workspace creation, or left to the student?
+- Platform makes the initial commit at workspace creation. Each project has a base skeleton (files defined by the teacher per project) committed as `chore: initial project scaffold` by a platform bot user. Student commits start from this baseline.
 - [ ] Should students be allowed to force-push (grading signal: did they rewrite history?), or block it?
 - [ ] Do teachers need to leave inline code comments on commits/PRs, or is Gitea read-only access sufficient for v1?
 - [ ] Should spec files (`specs/*.md`) be committed to the student's project repo as part of the workflow?
