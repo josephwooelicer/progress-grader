@@ -16,7 +16,6 @@
     "lucide-react": "^0.441.0",
     "tailwind-merge": "^2.5.2",
     "@radix-ui/react-separator": "^1.1.0",
-    "@radix-ui/react-badge": "^1.0.0",
     "@radix-ui/react-slot": "^1.1.0",
     "@radix-ui/react-tabs": "^1.1.0",
     "@radix-ui/react-dialog": "^1.1.1",
