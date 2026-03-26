@@ -48,6 +48,7 @@ The Teacher Dashboard is a web application (Next.js) where teachers review stude
 | FR-15 | Teacher can filter/search students by name, project, consent status | Should |
 | FR-16 | Dashboard is read-only — no teacher can modify student conversation or git data | Must |
 | FR-17 | Teacher can export final rubric scores for a project to CSV (student name, email, per-dimension scores, total, annotations) | Must |
+| FR-18 | Teacher can toggle a personal flag on any timeline entry; flags are per-teacher, not visible to others | Should |
 
 ### Non-Functional Requirements
 
@@ -218,6 +219,24 @@ CREATE TABLE timeline_comments (
 CREATE INDEX idx_timeline_comments_project ON timeline_comments (student_id, project_id);
 ```
 
+#### `timeline_flags` table
+
+```sql
+CREATE TABLE timeline_flags (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    teacher_id  UUID NOT NULL REFERENCES users(id),
+    student_id  UUID NOT NULL REFERENCES users(id),
+    project_id  UUID NOT NULL REFERENCES projects(id),
+    entry_type  TEXT NOT NULL,
+    entry_id    TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    UNIQUE (teacher_id, entry_type, entry_id)  -- one flag per teacher per entry
+);
+
+CREATE INDEX idx_timeline_flags_teacher_project ON timeline_flags (teacher_id, student_id, project_id);
+```
+
 ## 9. Git Summary View
 
 A secondary view with aggregate stats and direct Gitea links:
@@ -253,7 +272,7 @@ A secondary view with aggregate stats and direct Gitea links:
 
 - Rubric dimensions are per-project. Platform provides mandatory prefilled dimensions; teacher adds custom ones with scoring criteria. AI uses the scoring criteria to suggest scores. Teacher confirms all final scores.
 - Teachers can export final rubric scores to CSV per project for upload to external LMS (Canvas, Moodle, etc.). Export includes: student name, email, dimension scores, final total, teacher annotations.
-- [ ] Should there be a "flag for review" feature so teachers can mark interesting prompts?
+- Teachers can flag any timeline entry as a personal marker (stored per teacher, not visible to other teachers or students). Flags are togglable and used for reference during grading.
 - [ ] Do admins need a separate view to see all teachers' rubric scores across a course?
 
 ## 13. References
