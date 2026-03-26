@@ -1,4 +1,4 @@
-import { RawTimelineItem, TimelineEvent, RubricDimension, RubricScore } from "./types";
+import { RawTimelineItem, TimelineEvent, RubricDimension, RubricScore, Course, Project } from "./types";
 
 const BASE = "/api/backend";
 
@@ -197,4 +197,28 @@ export async function saveScore(
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
+
+export async function createCourse(body: { name: string; slug: string }): Promise<Course> {
+  return apiFetch("/api/teacher/courses", { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function createProject(
+  courseId: string,
+  body: { name: string; slug: string; description?: string; provider?: string; model?: string; api_key?: string }
+): Promise<Project> {
+  return apiFetch(`/api/teacher/courses/${courseId}/projects`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function createDimension(
+  projectId: string,
+  body: { name: string; description: string; scoring_criteria: string; max_score: number }
+): Promise<RubricDimension> {
+  return apiFetch(`/api/teacher/projects/${projectId}/rubric/dimensions`, { method: "POST", body: JSON.stringify(body) });
+}
+
+export async function deleteDimension(projectId: string, dimensionId: string): Promise<void> {
+  await apiFetch(`/api/teacher/projects/${projectId}/rubric/dimensions/${dimensionId}`, { method: "DELETE" });
 }

@@ -62,4 +62,70 @@ tests/          # Tests (mirror spec acceptance criteria)
 
 ## Commands
 
-> **TODO:** Add build, test, and run commands once initial implementation begins.
+### Start the platform (all services)
+
+```bash
+cd infra
+cp ../.env.example .env   # edit .env and fill in all required secrets
+docker compose up -d
+```
+
+### Run database migrations
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+### Build the workspace image
+
+The workspace image bundles the VS Code extension. Build from the `services/` directory so the extension source is available to the Dockerfile:
+
+```bash
+docker build \
+  -t progress-grader/workspace:latest \
+  -f services/workspace-image/Dockerfile \
+  services/
+```
+
+### Build the VS Code extension (.vsix)
+
+```bash
+cd services/extension
+npm install
+npm run package          # produces progress-grader-*.vsix
+```
+
+### Build the dashboard (standalone)
+
+```bash
+cd services/dashboard
+npm install
+npm run build
+```
+
+### View logs
+
+```bash
+cd infra
+docker compose logs -f backend
+docker compose logs -f proxy
+docker compose logs -f dashboard
+docker compose logs -f celery-worker
+```
+
+### Create a teacher account
+
+```bash
+curl -X POST http://localhost/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teacher@school.edu","password":"secret","role":"teacher"}'
+```
+
+### Register a student workspace (after teacher creates project)
+
+```bash
+curl -X POST http://localhost/api/workspace/create \
+  -H "Authorization: Bearer <student_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"project_id":"<project_uuid>"}'
+```
