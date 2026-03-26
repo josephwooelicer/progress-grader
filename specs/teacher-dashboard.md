@@ -273,7 +273,7 @@ A secondary view with aggregate stats and direct Gitea links:
 - Rubric dimensions are per-project. Platform provides mandatory prefilled dimensions; teacher adds custom ones with scoring criteria. AI uses the scoring criteria to suggest scores. Teacher confirms all final scores.
 - Teachers can export final rubric scores to CSV per project for upload to external LMS (Canvas, Moodle, etc.). Export includes: student name, email, dimension scores, final total, teacher annotations.
 - Teachers can flag any timeline entry as a personal marker (stored per teacher, not visible to other teachers or students). Flags are togglable and used for reference during grading.
-- [ ] Do admins need a separate view to see all teachers' rubric scores across a course?
+- No admin cross-teacher rubric scores view in v1. Admin accesses data directly via DB if needed.
 
 ## 13. References
 
