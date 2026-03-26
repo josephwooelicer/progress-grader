@@ -12,12 +12,132 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import TeacherUser
 from app.models.conversation import ConversationMessage
+from app.models.consent import Consent
 from app.models.git_event import GitEvent
-from app.models.project import RubricDimension
+from app.models.project import Course, Project, RubricDimension
 from app.models.rubric import RubricScore, TimelineComment, TimelineFlag
 from app.models.user import User
+from app.models.workspace import Workspace
 
 router = APIRouter(prefix="/api/teacher", tags=["teacher"])
+
+
+# ── Courses ──────────────────────────────────────────────────────────────────
+
+@router.get("/courses")
+async def list_courses(
+    current_user: TeacherUser,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Course).order_by(Course.name))
+    courses = result.scalars().all()
+    return {
+        "courses": [
+            {"id": str(c.id), "name": c.name, "slug": c.slug, "gitea_org": c.gitea_org, "created_at": c.created_at.isoformat()}
+            for c in courses
+        ]
+    }
+
+
+@router.get("/courses/{course_id}/students")
+async def list_course_students(
+    course_id: uuid.UUID,
+    current_user: TeacherUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all students with workspaces in this course, with consent status."""
+    projects_result = await db.execute(
+        select(Project).where(Project.course_id == course_id)
+    )
+    projects = projects_result.scalars().all()
+
+    rows = []
+    for project in projects:
+        workspaces_result = await db.execute(
+            select(Workspace).where(Workspace.project_id == project.id)
+        )
+        for ws in workspaces_result.scalars().all():
+            student = await db.get(User, ws.student_id)
+            if not student or student.deleted_at:
+                continue
+            consent = await db.scalar(
+                select(Consent).where(
+                    Consent.student_id == ws.student_id,
+                    Consent.project_id == project.id,
+                    Consent.revoked_at.is_(None),
+                )
+            )
+            rows.append({
+                "id": str(student.id),
+                "name": student.name,
+                "email": student.email,
+                "project_id": str(project.id),
+                "project_name": project.name,
+                "consented": consent is not None,
+            })
+
+    return {"students": rows}
+
+
+# ── Rubric dimensions ─────────────────────────────────────────────────────────
+
+@router.get("/projects/{project_id}/rubric/dimensions")
+async def list_rubric_dimensions(
+    project_id: uuid.UUID,
+    current_user: TeacherUser,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(RubricDimension).where(RubricDimension.project_id == project_id)
+        .order_by(RubricDimension.display_order)
+    )
+    dims = result.scalars().all()
+    return {
+        "dimensions": [
+            {
+                "id": str(d.id),
+                "project_id": str(d.project_id),
+                "name": d.name,
+                "description": d.description,
+                "scoring_criteria": d.scoring_criteria,
+                "max_score": d.max_score,
+                "is_mandatory": d.is_mandatory,
+                "display_order": d.display_order,
+            }
+            for d in dims
+        ]
+    }
+
+
+@router.get("/projects/{project_id}/rubric/scores")
+async def get_rubric_scores(
+    project_id: uuid.UUID,
+    student_id: uuid.UUID,
+    current_user: TeacherUser,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(RubricScore).where(
+            RubricScore.project_id == project_id,
+            RubricScore.student_id == student_id,
+            RubricScore.teacher_id == current_user.id,
+        )
+    )
+    scores = result.scalars().all()
+    return {
+        "scores": [
+            {
+                "id": str(s.id),
+                "dimension_id": str(s.dimension_id),
+                "student_id": str(s.student_id),
+                "suggested_score": s.suggested_score,
+                "suggested_justification": s.suggested_justification,
+                "confirmed_score": s.confirmed_score,
+                "confirmed_justification": s.confirmed_justification,
+            }
+            for s in scores
+        ]
+    }
 
 
 # ── Timeline ────────────────────────────────────────────────────────────────

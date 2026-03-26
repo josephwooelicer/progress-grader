@@ -197,6 +197,24 @@ services:
       - "traefik.http.routers.proxy.rule=Host(`${PLATFORM_DOMAIN:-localhost}`) && PathPrefix(`/v1`)"
       - "traefik.http.services.proxy.loadbalancer.server.port=8001"
 
+  # ── Teacher dashboard ─────────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: ../services/dashboard
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://backend:8000
+      NEXT_PUBLIC_GITEA_URL: http://${GITEA_DOMAIN:-gitea.localhost}
+    networks:
+      - platform
+    depends_on:
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`${PLATFORM_DOMAIN:-localhost}`) && !PathPrefix(`/api`, `/auth`, `/webhooks`, `/v1`)"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+
 volumes:
   postgres-data:
   redis-data:
