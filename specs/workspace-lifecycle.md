@@ -40,6 +40,10 @@ Each student project runs in an isolated container hosting an OpenVSCode Server 
 | FR-8 | Admins and teachers can pause or destroy any workspace; students cannot destroy their workspace | Must |
 | FR-11 | Students can reset (re-provision) their own workspace: volume is wiped and container is recreated fresh; Gitea remote is untouched | Must |
 | FR-12 | Before a student confirms a reset, the platform warns them of any commits that exist locally but have not been pushed to Gitea | Must |
+| FR-13 | On destroy, the workspace volume is automatically archived as a zip to object storage (Minio) before deletion | Must |
+| FR-14 | Archives are retained for 30 days then permanently deleted | Must |
+| FR-15 | Admin/teacher can opt to skip archiving when destroying a workspace | Must |
+| FR-16 | Archived workspaces are accessible to admins only (not student-facing) in v1 | Must |
 | FR-9 | Workspace creation provisions: OpenVSCode Server, Git, the AI agent VS Code extension, and Gitea remote config | Must |
 | FR-10 | Resource limits (CPU, memory) are enforced per container | Must |
 
@@ -122,6 +126,8 @@ On first creation, each workspace container must include:
 
 - See `design/workspace-lifecycle-design.md` (to be written after spec approval)
 - Container orchestration starts with Docker + Traefik; Kubernetes migration path should be non-breaking (volumes → PVCs, containers → Pods)
+- Object storage for archives: Minio (self-hosted, S3-compatible); archive key format: `archives/{student_id}/{project_id}/{timestamp}.zip`
+- 30-day archive expiry enforced via a Celery scheduled job (not Minio lifecycle policy, for auditability)
 
 ## 11. Acceptance Criteria
 
@@ -134,11 +140,14 @@ On first creation, each workspace container must include:
 - [ ] A student who resets their workspace sees a warning listing unpushed commits before confirming
 - [ ] After a reset, the workspace re-provisions to a clean state within 30 seconds and Gitea remote is intact
 - [ ] A student cannot destroy their own workspace (destroy action is absent from student UI)
+- [ ] Destroying a workspace (without skip) produces a zip archive in Minio within 60 seconds
+- [ ] Archive is retrievable by admin for 30 days, then automatically deleted
+- [ ] Destroying with "skip archiving" deletes the volume immediately with no archive created
 
 ## 12. Open Questions
 
 - Resource limits have a global default set by admin, overridable per project. Schema: `projects.resource_overrides JSONB` (nullable; falls back to global config if null).
-- No archive state. Destruction is always manual (admin/teacher). Before confirming destroy, the UI shows an optional one-click "Export local files as zip" prompt. Students are responsible for pushing work to Gitea before deadline.
+- On destroy, the workspace volume is automatically archived (zipped) to object storage (Minio) and retained for 30 days before permanent deletion. Admin/teacher can opt to skip archiving at the point of destruction. Archive is admin-accessible only (not student-facing in v1).
 - [ ] How do we handle students who lose network mid-session — grace period before auto-pause?
 
 ## 13. References
