@@ -83,7 +83,7 @@ function normaliseTimeline(items: RawTimelineItem[]): TimelineEvent[] {
         events.push({
           type: "git_force_push",
           id: item.id,
-          commit_sha: item.commit_sha,
+          commit_sha: item.commit_sha ?? null,
           branch_name: item.branch_name ?? "",
           timestamp: item.created_at,
         });
@@ -107,7 +107,7 @@ function normaliseTimeline(items: RawTimelineItem[]): TimelineEvent[] {
           id: item.id,
           pr_number: item.pr_number ?? 0,
           pr_title: item.pr_title ?? "",
-          branch_name: item.branch_name,
+          branch_name: item.branch_name ?? null,
           timestamp: item.created_at,
         });
       } else if (etype === "pr_merge") {
