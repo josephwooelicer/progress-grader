@@ -72,11 +72,16 @@ so that logging failures never degrade the student's coding experience.
 CREATE TABLE consents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id      UUID NOT NULL REFERENCES users(id),
+    project_id      UUID NOT NULL REFERENCES projects(id),
     agreed_at       TIMESTAMPTZ NOT NULL,
     agreement_text  TEXT NOT NULL,   -- snapshot of the consent wording at time of agreement
     ip_address      INET,
-    revoked_at      TIMESTAMPTZ      -- NULL = consent active
+    revoked_at      TIMESTAMPTZ,     -- NULL = consent active
+
+    UNIQUE (student_id, project_id)
 );
+
+CREATE INDEX idx_consents_student_project ON consents (student_id, project_id);
 ```
 
 ### `conversations` table
@@ -151,7 +156,7 @@ Teacher requests conversation data
 ## 11. Open Questions
 
 - Students can view their own conversation history per project within the IDE extension (read-only, self-reflection). This is served by the same API as the teacher view but scoped to the authenticated student's own data only.
-- [ ] Should consent be per-course or per-platform? (Current spec: per-platform, one-time)
+- Consent is per-project. A student must consent separately for each project before any conversation data for that project is logged or viewable by the teacher. The consent modal references the specific project and teacher name.
 - [ ] What happens to logs if a student's account is deleted? (Institutional policy — defer to admin)
 - [ ] Should we store the system prompt sent to the provider, or only the student-authored messages?
 

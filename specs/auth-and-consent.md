@@ -20,7 +20,7 @@ This spec defines how users (students, teachers, admins) authenticate to the pla
 ## 3. Non-Goals
 
 - Building a custom identity provider (Keycloak handles this)
-- Per-session consent (consent is one-time per student per platform)
+- Per-session consent (consent is once per student per project)
 - MFA in v1 (delegated to the institution's SSO provider)
 - Student-initiated consent revocation in the UI (can be done by admin; policy decision)
 
@@ -33,13 +33,13 @@ This spec defines how users (students, teachers, admins) authenticate to the pla
 | FR-1 | Platform supports three roles: `student`, `teacher`, `admin` | Must |
 | FR-2 | Authentication is handled by Keycloak (OIDC); platform issues its own short-lived JWT after Keycloak login | Must |
 | FR-3 | Email/password login is available as a fallback for institutions without SSO | Should |
-| FR-4 | On first login, students are shown a blocking consent modal before accessing any workspace | Must |
-| FR-5 | The consent modal displays the exact wording of what will be collected and who can view it | Must |
+| FR-4 | When a student opens a project for the first time, they are shown a blocking consent modal specific to that project before the workspace starts | Must |
+| FR-5 | The consent modal names the specific project and teacher, and displays the exact wording of what will be collected | Must |
 | FR-6 | Consent is only recorded after the student actively clicks "I Agree" — pre-ticked boxes are not permitted | Must |
-| FR-7 | The consent record stores: student_id, timestamp, IP address, exact consent wording shown | Must |
-| FR-8 | A student who has not consented cannot open any workspace | Must |
-| FR-9 | The AI proxy rejects requests from students without an active consent record (403) | Must |
-| FR-10 | Teacher API endpoints reject requests for students without active consent (403) | Must |
+| FR-7 | The consent record stores: student_id, project_id, timestamp, IP address, exact consent wording shown | Must |
+| FR-8 | A student who has not consented to a specific project cannot open that project's workspace | Must |
+| FR-9 | The AI proxy rejects requests from students without an active consent record for the current project (403) | Must |
+| FR-10 | Teacher API endpoints reject requests for students without active consent for that project (403) | Must |
 | FR-11 | Admins can view and manage consent records | Must |
 | FR-12 | Teachers can see a consent status badge per student in the dashboard | Must |
 | FR-13 | Role assignment is managed in Keycloak (or by admin in the platform for non-SSO setups) | Must |
@@ -107,9 +107,9 @@ Blocking modal shown (cannot be dismissed without action):
    [I Agree] [I Do Not Agree — Exit]"
 
 Student clicks "I Agree":
-  → POST /consent with student_id, agreement_text, ip_address
-  → consent record written to DB
-  → Student proceeds to platform
+  → POST /consent with student_id, project_id, agreement_text, ip_address
+  → consent record written to DB (scoped to this project)
+  → Workspace starts, student proceeds
 
 Student clicks "I Do Not Agree":
   → Session terminated, student redirected to exit page
@@ -143,8 +143,7 @@ Student clicks "I Do Not Agree":
 }
 ```
 
-- `consented` is embedded in the JWT so the proxy can check it without a DB call
-- If consent is revoked, the JWT must be invalidated (via a blocklist or by waiting for expiry — policy decision)
+- `consented` is NOT embedded in the JWT since consent is now per-project. The proxy and API endpoints do a fast indexed DB lookup on `(student_id, project_id)` against the `consents` table on each request.
 
 ## 9. Data Schema
 
@@ -169,11 +168,16 @@ CREATE TABLE users (
 CREATE TABLE consents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_id      UUID NOT NULL REFERENCES users(id),
+    project_id      UUID NOT NULL REFERENCES projects(id),
     agreed_at       TIMESTAMPTZ NOT NULL,
-    agreement_text  TEXT NOT NULL,
+    agreement_text  TEXT NOT NULL,   -- snapshot of wording shown at time of agreement
     ip_address      INET,
-    revoked_at      TIMESTAMPTZ
+    revoked_at      TIMESTAMPTZ      -- NULL = consent active
+
+    UNIQUE (student_id, project_id)  -- one consent record per student per project
 );
+
+CREATE INDEX idx_consents_student_project ON consents (student_id, project_id);
 ```
 
 ## 10. Design Notes
@@ -184,17 +188,18 @@ CREATE TABLE consents (
 
 ## 11. Acceptance Criteria
 
-- [ ] A new student who logs in for the first time sees the consent modal and cannot dismiss it without choosing an option
-- [ ] A student who clicks "I Do Not Agree" has no workspace created and no data logged
-- [ ] A student who consents can open a workspace immediately after agreeing
-- [ ] The AI proxy returns 403 for a student with no consent record, even with a valid JWT
-- [ ] A teacher API call for an unconsented student returns 403
+- [ ] A student opening a project for the first time sees the consent modal naming that specific project and teacher
+- [ ] A student with consent for project A but not project B can open A but is blocked on B until they consent
+- [ ] A student who clicks "I Do Not Agree" has no workspace created and no data logged for that project
+- [ ] A student who consents can open the workspace immediately after agreeing
+- [ ] The AI proxy returns 403 for a request where no consent record exists for that (student_id, project_id) pair
+- [ ] A teacher API call for an unconsented student+project combination returns 403
 - [ ] JWTs expire after 1 hour; the client can refresh without re-showing the consent modal
 - [ ] An admin can view the full consent record including the exact wording the student agreed to
 
 ## 12. Open Questions
 
-- [ ] Should consent be per-project (student sees the project name in the modal) or per-platform? Current spec: per-platform, but the modal can reference the course name.
+- Consent is per-project. Each project triggers its own consent modal naming the project and teacher. A student can consent to some projects but not others.
 - [ ] What happens mid-project if a student wants to withdraw consent? Current spec: admin-only action, deferred to institutional policy.
 - [ ] Should the platform support guardian consent for minors (e.g. students under 18)? Likely needed for secondary schools.
 - [ ] Do we need audit logging of admin actions on consent records?
