@@ -1,0 +1,209 @@
+services:
+
+  # ── Reverse proxy ────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-certs:/certs
+    networks:
+      - platform
+
+  # ── Database ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-progressgrader}
+      POSTGRES_USER: ${POSTGRES_USER:-pg}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pg}"]
+      interval: 10s
+      retries: 5
+
+  # ── Cache / queue broker ─────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      retries: 5
+
+  # ── Git hosting ───────────────────────────────────────────────────────────────
+  gitea:
+    image: gitea/gitea:1.22
+    restart: unless-stopped
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: postgres:5432
+      GITEA__database__NAME: ${GITEA_DB:-gitea}
+      GITEA__database__USER: ${POSTGRES_USER:-pg}
+      GITEA__database__PASSWD: ${POSTGRES_PASSWORD}
+      GITEA__server__DOMAIN: ${GITEA_DOMAIN:-gitea.localhost}
+      GITEA__server__ROOT_URL: http://${GITEA_DOMAIN:-gitea.localhost}
+      GITEA__server__HTTP_PORT: 3000
+      GITEA__service__DISABLE_REGISTRATION: "true"
+      GITEA__webhook__ALLOWED_HOST_LIST: "*"
+    volumes:
+      - gitea-data:/data
+    networks:
+      - platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gitea.rule=Host(`${GITEA_DOMAIN:-gitea.localhost}`)"
+      - "traefik.http.services.gitea.loadbalancer.server.port=3000"
+
+  # ── Object storage (workspace archives) ──────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD required}
+    volumes:
+      - minio-data:/data
+    networks:
+      - platform
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      retries: 5
+
+  # ── Platform backend ──────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ../services/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pg}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-progressgrader}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY required}
+      GITEA_URL: http://gitea:3000
+      GITEA_ADMIN_TOKEN: ${GITEA_ADMIN_TOKEN:?GITEA_ADMIN_TOKEN required}
+      GITEA_WEBHOOK_SECRET: ${GITEA_WEBHOOK_SECRET:?GITEA_WEBHOOK_SECRET required}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-workspace-archives}
+      DOCKER_HOST: ${DOCKER_HOST:-unix:///var/run/docker.sock}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-localhost}
+      PROXY_URL: http://proxy:8001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`${PLATFORM_DOMAIN:-localhost}`) && PathPrefix(`/api`, `/auth`, `/webhooks`)"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+
+  # ── Celery worker ─────────────────────────────────────────────────────────────
+  celery-worker:
+    build:
+      context: ../services/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pg}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-progressgrader}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      GITEA_URL: http://gitea:3000
+      GITEA_ADMIN_TOKEN: ${GITEA_ADMIN_TOKEN}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-workspace-archives}
+      DOCKER_HOST: ${DOCKER_HOST:-unix:///var/run/docker.sock}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Celery beat (scheduled tasks) ─────────────────────────────────────────────
+  celery-beat:
+    build:
+      context: ../services/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pg}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-progressgrader}
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-workspace-archives}
+    networks:
+      - platform
+    depends_on:
+      - redis
+
+  # ── AI proxy ──────────────────────────────────────────────────────────────────
+  proxy:
+    build:
+      context: ../services/proxy
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-pg}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-progressgrader}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      DEFAULT_PROVIDER: ${DEFAULT_PROVIDER:-openai}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-gpt-4o}
+      DEFAULT_API_KEY: ${DEFAULT_API_KEY:-}
+      DEFAULT_BASE_URL: ${DEFAULT_BASE_URL:-}
+    networks:
+      - platform
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.proxy.rule=Host(`${PLATFORM_DOMAIN:-localhost}`) && PathPrefix(`/v1`)"
+      - "traefik.http.services.proxy.loadbalancer.server.port=8001"
+
+volumes:
+  postgres-data:
+  redis-data:
+  gitea-data:
+  minio-data:
+  traefik-certs:
+
+networks:
+  platform:
+    driver: bridge
