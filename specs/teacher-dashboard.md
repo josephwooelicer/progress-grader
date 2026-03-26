@@ -47,6 +47,7 @@ The Teacher Dashboard is a web application (Next.js) where teachers review stude
 | FR-14 | Dashboard shows a consent status indicator per student | Must |
 | FR-15 | Teacher can filter/search students by name, project, consent status | Should |
 | FR-16 | Dashboard is read-only — no teacher can modify student conversation or git data | Must |
+| FR-17 | Teacher can export final rubric scores for a project to CSV (student name, email, per-dimension scores, total, annotations) | Must |
 
 ### Non-Functional Requirements
 
@@ -251,7 +252,7 @@ A secondary view with aggregate stats and direct Gitea links:
 ## 12. Open Questions
 
 - Rubric dimensions are per-project. Platform provides mandatory prefilled dimensions; teacher adds custom ones with scoring criteria. AI uses the scoring criteria to suggest scores. Teacher confirms all final scores.
-- [ ] Should teachers be able to export rubric scores to CSV for upload to an LMS (e.g. Canvas, Moodle)?
+- Teachers can export final rubric scores to CSV per project for upload to external LMS (Canvas, Moodle, etc.). Export includes: student name, email, dimension scores, final total, teacher annotations.
 - [ ] Should there be a "flag for review" feature so teachers can mark interesting prompts?
 - [ ] Do admins need a separate view to see all teachers' rubric scores across a course?
 
