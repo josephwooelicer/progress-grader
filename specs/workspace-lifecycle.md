@@ -35,7 +35,7 @@ Each student project runs in an isolated container hosting an OpenVSCode Server 
 | FR-3 | Workspaces persist across sessions — student files and git history are not lost on pause | Must |
 | FR-4 | A workspace can be in one of four states: `pending`, `running`, `paused`, `destroyed` | Must |
 | FR-5 | Each running workspace is accessible at a unique URL (e.g. `ws-{id}.domain.com`) routed via Traefik | Must |
-| FR-6 | Workspaces auto-pause after a configurable idle timeout (default: 30 minutes) | Should |
+| FR-6 | Workspaces do not auto-pause; they run until manually paused or the server is restarted | Must |
 | FR-7 | Students can manually pause and resume their own workspace | Should |
 | FR-8 | Admins and teachers can pause or destroy any workspace; students cannot destroy their workspace | Must |
 | FR-11 | Students can reset (re-provision) their own workspace: volume is wiped and container is recreated fresh; Gitea remote is untouched | Must |
@@ -87,7 +87,7 @@ so that no single student can starve shared infrastructure.
 | Transition | Trigger | Who |
 |---|---|---|
 | pending → running | Student opens project / workspace created | Student / system |
-| running → paused | Idle timeout OR manual pause | System / student |
+| running → paused | Manual pause only | Student / admin / teacher |
 | paused → running | Student resumes session | Student |
 | running/paused → reset | Student confirms re-provision (with unpushed commit warning) | Student only |
 | running/paused → destroyed | Manual action | Admin / teacher only |
@@ -134,7 +134,7 @@ On first creation, each workspace container must include:
 - [ ] A student who has never opened a project gets a running workspace within 30 seconds
 - [ ] Two students opening the same project get separate, independent containers
 - [ ] A student who resumes a paused workspace finds all files and git history intact
-- [ ] A workspace idle for 30 minutes is automatically paused
+- [ ] A running workspace stays running indefinitely until manually paused — no idle auto-pause
 - [ ] A destroyed workspace's volume is deleted and cannot be recovered via the UI
 - [ ] No container can reach another container's filesystem or network
 - [ ] A student who resets their workspace sees a warning listing unpushed commits before confirming
@@ -148,7 +148,7 @@ On first creation, each workspace container must include:
 
 - Resource limits have a global default set by admin, overridable per project. Schema: `projects.resource_overrides JSONB` (nullable; falls back to global config if null).
 - On destroy, the workspace volume is automatically archived (zipped) to object storage (Minio) and retained for 30 days before permanent deletion. Admin/teacher can opt to skip archiving at the point of destruction. Archive is admin-accessible only (not student-facing in v1).
-- [ ] How do we handle students who lose network mid-session — grace period before auto-pause?
+- No auto-pause. Workspaces run until manually paused. Network loss has no effect on workspace state.
 
 ## 13. References
 
