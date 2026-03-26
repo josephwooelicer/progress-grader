@@ -147,7 +147,7 @@ On workspace creation:
 
 - Platform makes the initial commit at workspace creation. Each project has a base skeleton (files defined by the teacher per project) committed as `chore: initial project scaffold` by a platform bot user. Student commits start from this baseline.
 - All Git actions are permitted including force-push, history rewrite, and branch deletion. No Gitea branch protection rules enforced. Force-push events are captured via webhook as a grading signal.
-- [ ] Do teachers need to leave inline code comments on commits/PRs, or is Gitea read-only access sufficient for v1?
+- Read-only Gitea access for teachers in v1. No inline code comments on Gitea. Teacher feedback is left on the unified activity timeline in the teacher dashboard (see `specs/teacher-dashboard.md`), which interleaves conversation messages and git events chronologically.
 - [ ] Should spec files (`specs/*.md`) be committed to the student's project repo as part of the workflow?
 
 ## 13. References

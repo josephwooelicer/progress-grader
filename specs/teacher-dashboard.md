@@ -32,10 +32,11 @@ The Teacher Dashboard is a web application (Next.js) where teachers review stude
 |------|-------------|----------|
 | FR-1 | Teacher can view a list of all students and their projects in their assigned courses | Must |
 | FR-2 | Teacher can open a student project and see all conversation sessions, ordered by date | Must |
-| FR-3 | Each conversation session shows the full prompt/response thread with timestamps | Must |
-| FR-4 | Teacher can see conversation boundaries (where a new `conversation_id` begins) as a visible separator | Must |
-| FR-5 | Teacher can view Git activity summary per student project: commit count, branch count, PR count | Must |
-| FR-6 | Teacher can click through to Gitea for full commit/branch/PR detail | Must |
+| FR-3 | The primary view is a unified activity timeline merging conversation messages and git events in chronological order | Must |
+| FR-4 | Conversation boundaries (new `conversation_id`) appear as labelled dividers in the timeline | Must |
+| FR-5 | Git events (commits, branches, PRs, force-pushes) appear as cards in the timeline at the correct timestamp | Must |
+| FR-6 | Teachers can leave comments on any individual timeline entry; comments are stored and persist | Must |
+| FR-7 | Teacher can click through to Gitea for full commit/branch/PR detail (read-only) | Must |
 | FR-7 | Teacher can apply a rubric score per grading dimension for each student project | Must |
 | FR-8 | Rubric scores and annotations are saved and retrievable | Must |
 | FR-9 | Teacher cannot view conversations for students who have not consented | Must (enforced by API) |
@@ -108,26 +109,62 @@ CREATE UNIQUE INDEX idx_rubric_unique ON rubric_scores (teacher_id, student_id, 
 /dashboard                          → Course/student list
 /dashboard/courses/{course_id}      → Students in course
 /dashboard/students/{student_id}/projects/{project_id}
-  ├── /conversations                → Full conversation thread view
-  ├── /git                          → Git activity summary + Gitea links
-  └── /rubric                       → Rubric scoring form
+  ├── /timeline                     → Unified activity timeline (primary view)
+  ├── /rubric                       → Rubric scoring form
+  └── /git                          → Git summary + Gitea deep links
 ```
 
-## 8. Conversation View Details
+## 8. Unified Activity Timeline (Primary View)
 
-- Messages displayed in chronological order
-- `user` messages: visually distinct from `assistant` messages
-- Conversation boundaries shown as a labelled divider: `— New conversation started at {timestamp} —`
-- Each message shows: timestamp, role, content, model name, token count
-- Token counts help teachers see if student is managing context (high token counts = not starting new conversations)
+The timeline is the main grading surface. It merges conversation messages and git events into a single chronological feed, so teachers can see exactly what the student did and said in the order it happened.
 
-## 9. Git Activity View Details
+### Timeline Entry Types
 
-- Summary cards: total commits, branches created, PRs opened, PRs merged
-- Commit timeline: list of commits with SHA (truncated), message, timestamp, branch
-- Each commit SHA links to Gitea commit detail page
-- Branch list with creation date, links to Gitea branch view
-- PR list with title, state, description preview, links to Gitea PR page
+| Type | Source | Display |
+|---|---|---|
+| `conversation_start` | New `conversation_id` | Divider: `— New conversation · {timestamp} · {model} —` |
+| `user_message` | `conversation_messages` (role=user) | Student prompt bubble with timestamp and token count |
+| `assistant_message` | `conversation_messages` (role=assistant) | AI response bubble with token count and context usage % at time of message |
+| `git_commit` | `git_events` (push) | Commit card: SHA (links to Gitea), message, branch, timestamp |
+| `git_branch` | `git_events` (branch_create) | Branch card: branch name, timestamp |
+| `git_pr_open` | `git_events` (pr_open) | PR card: title, description preview, link to Gitea PR |
+| `git_pr_merge` | `git_events` (pr_merge) | PR merge card: title, timestamp |
+| `git_force_push` | `git_events` (push, forced=true) | Force-push warning card: branch, timestamp |
+
+### Teacher Comments on Timeline
+
+- Teachers can leave a comment on **any timeline entry** (a message, a commit, a conversation boundary)
+- Comments are stored in a `timeline_comments` table (see schema below)
+- Comments are visible only to teachers and admins — not to students in v1
+- Comments are not part of the rubric; they are free-form annotations for reference during grading
+
+### `timeline_comments` table
+
+```sql
+CREATE TABLE timeline_comments (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    teacher_id      UUID NOT NULL REFERENCES users(id),
+    student_id      UUID NOT NULL REFERENCES users(id),
+    project_id      UUID NOT NULL REFERENCES projects(id),
+    entry_type      TEXT NOT NULL,   -- 'conversation_message', 'git_commit', 'conversation_start', etc.
+    entry_id        TEXT NOT NULL,   -- UUID of the referenced row (message id, git_event id, conversation id)
+    comment         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_timeline_comments_project ON timeline_comments (student_id, project_id);
+```
+
+## 9. Git Summary View
+
+A secondary view with aggregate stats and direct Gitea links:
+
+- Summary cards: total commits, branches created, PRs opened, PRs merged, force-push count
+- Commit list: SHA (truncated, links to Gitea), message, branch, timestamp
+- Branch list: name, created at, links to Gitea branch view
+- PR list: title, state, description preview, links to Gitea PR page
+- All Gitea links open in a new tab; Gitea is read-only for teachers
 
 ## 10. Design Notes
 
@@ -137,12 +174,14 @@ CREATE UNIQUE INDEX idx_rubric_unique ON rubric_scores (teacher_id, student_id, 
 
 ## 11. Acceptance Criteria
 
-- [ ] Teacher can navigate to a student project and see all conversations grouped by session
-- [ ] Conversation boundaries (new `conversation_id`) are visually distinct
-- [ ] Teacher sees "No consent on file" and no conversation data for unconsented students
-- [ ] Git summary shows correct commit/branch/PR counts matching Gitea
+- [ ] Teacher sees a single unified timeline with conversation messages and git events interleaved by timestamp
+- [ ] Conversation boundaries (new `conversation_id`) are visually distinct dividers in the timeline
+- [ ] Git commits, branch creates, PRs, and force-pushes appear as distinct cards in the timeline
+- [ ] Teacher can click any timeline entry and leave a comment; comment persists on page reload
+- [ ] Teacher sees "No consent on file" and no timeline data for unconsented students
+- [ ] Git summary view shows correct commit/branch/PR counts matching Gitea
 - [ ] Teacher can submit rubric scores for all 7 dimensions and they persist across page reloads
-- [ ] Dashboard page load is under 2 seconds for a student with 500 conversation messages
+- [ ] Timeline loads within 2 seconds for a student with 500 messages + 100 git events
 - [ ] A user with `student` role cannot access any dashboard route
 
 ## 12. Open Questions
