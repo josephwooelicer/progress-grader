@@ -119,7 +119,7 @@ On first creation, each workspace container must include:
 
 ## 12. Open Questions
 
-- [ ] Should workspace CPU/memory limits be configurable per-project or globally by admin?
+- Resource limits have a global default set by admin, overridable per project. Schema: `projects.resource_overrides JSONB` (nullable; falls back to global config if null).
 - [ ] Do we need a "archiving" state between paused and destroyed (e.g. export to zip before deletion)?
 - [ ] How do we handle students who lose network mid-session — grace period before auto-pause?
 
