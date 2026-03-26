@@ -150,7 +150,7 @@ Teacher requests conversation data
 
 ## 11. Open Questions
 
-- [ ] Should students be able to view their own conversation logs within the IDE (for self-reflection)?
+- Students can view their own conversation history per project within the IDE extension (read-only, self-reflection). This is served by the same API as the teacher view but scoped to the authenticated student's own data only.
 - [ ] Should consent be per-course or per-platform? (Current spec: per-platform, one-time)
 - [ ] What happens to logs if a student's account is deleted? (Institutional policy — defer to admin)
 - [ ] Should we store the system prompt sent to the provider, or only the student-authored messages?
