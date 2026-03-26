@@ -78,6 +78,7 @@ so that I can evaluate their version control strategy.
 | PR description | PR open webhook | Ability to communicate changes clearly |
 | Time between commits | Commit timestamps | Pacing, not coding in one session |
 | Commits-per-session | Correlate with workspace activity | Incremental progress vs. big-bang submissions |
+| Force-push | Push webhook (forced flag) | Did student rewrite or hide history before submission |
 
 All signals are stored in a `git_events` table (see schema below).
 
@@ -145,7 +146,7 @@ On workspace creation:
 ## 12. Open Questions
 
 - Platform makes the initial commit at workspace creation. Each project has a base skeleton (files defined by the teacher per project) committed as `chore: initial project scaffold` by a platform bot user. Student commits start from this baseline.
-- [ ] Should students be allowed to force-push (grading signal: did they rewrite history?), or block it?
+- All Git actions are permitted including force-push, history rewrite, and branch deletion. No Gitea branch protection rules enforced. Force-push events are captured via webhook as a grading signal.
 - [ ] Do teachers need to leave inline code comments on commits/PRs, or is Gitea read-only access sufficient for v1?
 - [ ] Should spec files (`specs/*.md`) be committed to the student's project repo as part of the workflow?
 
