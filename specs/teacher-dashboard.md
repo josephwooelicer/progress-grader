@@ -37,12 +37,16 @@ The Teacher Dashboard is a web application (Next.js) where teachers review stude
 | FR-5 | Git events (commits, branches, PRs, force-pushes) appear as cards in the timeline at the correct timestamp | Must |
 | FR-6 | Teachers can leave comments on any individual timeline entry; comments are stored and persist | Must |
 | FR-7 | Teacher can click through to Gitea for full commit/branch/PR detail (read-only) | Must |
-| FR-7 | Teacher can apply a rubric score per grading dimension for each student project | Must |
-| FR-8 | Rubric scores and annotations are saved and retrievable | Must |
-| FR-9 | Teacher cannot view conversations for students who have not consented | Must (enforced by API) |
-| FR-10 | Dashboard shows a consent status indicator per student | Must |
-| FR-11 | Teacher can filter/search students by name, project, consent status | Should |
-| FR-12 | Dashboard is read-only — no teacher can modify student conversation data | Must |
+| FR-7 | Teacher can click through to Gitea for full commit/branch/PR detail (read-only) | Must |
+| FR-8 | Teacher defines rubric dimensions per project at project creation; mandatory platform dimensions are prefilled and cannot be removed | Must |
+| FR-9 | Teacher can add custom rubric dimensions with a name, description, and scoring criteria | Must |
+| FR-10 | Teacher can trigger AI grading for a student (or bulk for all students in a project) | Must |
+| FR-11 | AI returns a suggested score + justification per dimension; saved to `rubric_scores.ai_suggested_score` | Must |
+| FR-12 | Teacher reviews AI scores and confirms, adjusts, or overrides each; `final_score` is only set by teacher action | Must |
+| FR-13 | Teacher cannot view conversations for students who have not consented | Must (enforced by API) |
+| FR-14 | Dashboard shows a consent status indicator per student | Must |
+| FR-15 | Teacher can filter/search students by name, project, consent status | Should |
+| FR-16 | Dashboard is read-only — no teacher can modify student conversation or git data | Must |
 
 ### Non-Functional Requirements
 
@@ -67,40 +71,97 @@ so that I can evaluate their Git workflow without leaving the dashboard.
 As a teacher, I want to score each student on a rubric and leave notes
 so that I have structured, defensible grades.
 
+As a teacher, I want AI to pre-score students against my rubric criteria
+so that I can review and adjust rather than grade from scratch.
+
 As a teacher, I want to be blocked from viewing a student's conversations if they haven't consented
 so that I never inadvertently access unconsented data.
 ```
 
-## 6. Grading Rubric Dimensions
+## 6. Grading Rubric
 
-The rubric is applied per `(teacher, student, project)`. Each dimension is scored on a configurable scale (default: 1–5).
+### Structure
+
+Rubrics are **per-project**. When a teacher creates a project, they define the rubric dimensions. The platform provides **prefilled mandatory dimensions** that cannot be removed, plus teachers can add custom dimensions.
+
+**Mandatory dimensions (prefilled, always present):**
 
 | Dimension | What is Evaluated | Data Source |
 |---|---|---|
 | **Prompt quality** | Clarity, specificity, context given in prompts | Conversation logs |
 | **Problem decomposition** | Whether student breaks problems into small asks | Conversation logs + commit patterns |
-| **Context management** | Appropriate use of new conversations to prevent bloat | Conversation boundaries (`conversation_id` resets) |
+| **Context management** | Appropriate use of new conversations to prevent bloat | Conversation boundaries |
 | **Spec-driven approach** | Evidence of writing specs before asking for code | Conversation logs + Git file history |
 | **Commit granularity** | Small, logical commits with clear messages | Git events |
 | **Branching strategy** | Feature branches, meaningful names, PR usage | Git events |
 | **PR quality** | PR descriptions, review engagement | Git events |
 
-### `rubric_scores` table
+**Custom dimensions:** Teacher can add project-specific dimensions (e.g. "understanding of REST APIs", "correct use of error handling"). Each custom dimension includes a name, description, and scoring criteria written by the teacher — this criteria is what the AI uses to score.
+
+Each dimension has:
+- A **name** and **description**
+- A **scoring criteria** (free text written by teacher — fed to AI for auto-scoring)
+- A **max score** (configurable per dimension, default 5)
+- An **is_mandatory** flag (true for platform defaults)
+
+### AI-Assisted Scoring
+
+The platform uses AI to pre-score each student against the rubric after the project deadline. The teacher reviews and may override any AI-generated score.
+
+**Scoring flow:**
+```
+Teacher triggers "AI Grade" for a student project (or bulk for whole class)
+  → Platform assembles grading context:
+      - Full conversation logs (all messages, conversation boundaries)
+      - Git events (commits, branches, PRs, force-pushes, timestamps)
+      - Each rubric dimension's name + scoring criteria
+  → Sends to AI (via the same thin proxy, using a platform-level API key)
+  → AI returns a score + justification per dimension
+  → Scores saved as ai_suggested_score in rubric_scores table
+  → Teacher sees AI scores with justifications on the rubric page
+  → Teacher can accept, adjust, or override each score
+  → Final score is teacher-confirmed
+```
+
+**Important:** AI scores are suggestions only. The teacher's confirmed score is the grade of record.
+
+### Data Schema
+
+#### `rubric_dimensions` table
+
+```sql
+CREATE TABLE rubric_dimensions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id      UUID NOT NULL REFERENCES projects(id),
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL,
+    scoring_criteria TEXT NOT NULL,  -- teacher-written criteria fed to AI for scoring
+    max_score       SMALLINT NOT NULL DEFAULT 5,
+    is_mandatory    BOOLEAN NOT NULL DEFAULT false,
+    display_order   SMALLINT NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### `rubric_scores` table
 
 ```sql
 CREATE TABLE rubric_scores (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    teacher_id      UUID NOT NULL REFERENCES users(id),
-    student_id      UUID NOT NULL REFERENCES users(id),
-    project_id      UUID NOT NULL REFERENCES projects(id),
-    dimension       TEXT NOT NULL,
-    score           SMALLINT NOT NULL CHECK (score BETWEEN 1 AND 5),
-    annotation      TEXT,
-    scored_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    dimension_id        UUID NOT NULL REFERENCES rubric_dimensions(id),
+    teacher_id          UUID NOT NULL REFERENCES users(id),
+    student_id          UUID NOT NULL REFERENCES users(id),
+    project_id          UUID NOT NULL REFERENCES projects(id),
+    ai_suggested_score  SMALLINT,           -- NULL until AI grading runs
+    ai_justification    TEXT,               -- AI's reasoning for the suggested score
+    final_score         SMALLINT,           -- NULL until teacher confirms
+    teacher_annotation  TEXT,
+    ai_graded_at        TIMESTAMPTZ,
+    teacher_confirmed_at TIMESTAMPTZ,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-CREATE UNIQUE INDEX idx_rubric_unique ON rubric_scores (teacher_id, student_id, project_id, dimension);
+    UNIQUE (dimension_id, student_id, project_id)
+);
 ```
 
 ## 7. Dashboard Page Structure
@@ -180,13 +241,16 @@ A secondary view with aggregate stats and direct Gitea links:
 - [ ] Teacher can click any timeline entry and leave a comment; comment persists on page reload
 - [ ] Teacher sees "No consent on file" and no timeline data for unconsented students
 - [ ] Git summary view shows correct commit/branch/PR counts matching Gitea
-- [ ] Teacher can submit rubric scores for all 7 dimensions and they persist across page reloads
+- [ ] Rubric page shows mandatory dimensions prefilled and teacher's custom dimensions per project
+- [ ] AI grading runs and populates `ai_suggested_score` + `ai_justification` for all dimensions
+- [ ] Teacher can confirm, adjust, or override any AI score; only confirmed scores count as final
+- [ ] Bulk AI grading triggers scoring for all consented students in a project in one action
 - [ ] Timeline loads within 2 seconds for a student with 500 messages + 100 git events
 - [ ] A user with `student` role cannot access any dashboard route
 
 ## 12. Open Questions
 
-- [ ] Should rubric dimensions be configurable per course, or fixed platform-wide?
+- Rubric dimensions are per-project. Platform provides mandatory prefilled dimensions; teacher adds custom ones with scoring criteria. AI uses the scoring criteria to suggest scores. Teacher confirms all final scores.
 - [ ] Should teachers be able to export rubric scores to CSV for upload to an LMS (e.g. Canvas, Moodle)?
 - [ ] Should there be a "flag for review" feature so teachers can mark interesting prompts?
 - [ ] Do admins need a separate view to see all teachers' rubric scores across a course?
