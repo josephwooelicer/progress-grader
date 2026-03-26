@@ -156,7 +156,8 @@ CREATE TABLE users (
     name        TEXT NOT NULL,
     role        TEXT NOT NULL CHECK (role IN ('student', 'teacher', 'admin')),
     keycloak_id TEXT UNIQUE,   -- NULL for local-only users
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ  -- NULL = active; soft delete only, never hard delete
 );
 ```
 

@@ -157,7 +157,7 @@ Teacher requests conversation data
 
 - Students can view their own conversation history per project within the IDE extension (read-only, self-reflection). This is served by the same API as the teacher view but scoped to the authenticated student's own data only.
 - Consent is per-project. A student must consent separately for each project before any conversation data for that project is logged or viewable by the teacher. The consent modal references the specific project and teacher name.
-- [ ] What happens to logs if a student's account is deleted? (Institutional policy — defer to admin)
+- Soft delete. Student accounts are marked `deleted_at` (never hard deleted). All conversation logs and git events are retained and remain queryable by admins. Teachers lose access once the account is soft-deleted.
 - [ ] Should we store the system prompt sent to the provider, or only the student-authored messages?
 
 ## 12. References
