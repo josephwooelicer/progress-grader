@@ -203,7 +203,7 @@ CREATE INDEX idx_consents_student_project ON consents (student_id, project_id);
 - Consent is per-project. Each project triggers its own consent modal naming the project and teacher. A student can consent to some projects but not others.
 - No revocation. Consent is permanent once given for a project. This is stated explicitly in the consent modal wording. The `revoked_at` column is retained in the schema for future policy changes but is never set by the application.
 - Platform targets university students (18+). Guardian consent is out of scope.
-- [ ] Do we need audit logging of admin actions on consent records?
+- No audit logging of admin actions on consent records in v1.
 
 ## 13. References
 
