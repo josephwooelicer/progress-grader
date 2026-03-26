@@ -15,6 +15,7 @@ Each student project runs in an isolated container hosting an OpenVSCode Server 
 - Provide each student with a fully isolated coding environment per project
 - Allow students to resume work across sessions without data loss
 - Enable teachers and admins to manage workspace lifecycle (pause, destroy)
+- Allow students to reset (re-provision) their own workspace without teacher/admin involvement
 - Route each workspace to a unique URL via Traefik
 
 ## 3. Non-Goals
@@ -36,7 +37,9 @@ Each student project runs in an isolated container hosting an OpenVSCode Server 
 | FR-5 | Each running workspace is accessible at a unique URL (e.g. `ws-{id}.domain.com`) routed via Traefik | Must |
 | FR-6 | Workspaces auto-pause after a configurable idle timeout (default: 30 minutes) | Should |
 | FR-7 | Students can manually pause and resume their own workspace | Should |
-| FR-8 | Admins and teachers can pause or destroy any workspace | Must |
+| FR-8 | Admins and teachers can pause or destroy any workspace; students cannot destroy their workspace | Must |
+| FR-11 | Students can reset (re-provision) their own workspace: volume is wiped and container is recreated fresh; Gitea remote is untouched | Must |
+| FR-12 | Before a student confirms a reset, the platform warns them of any commits that exist locally but have not been pushed to Gitea | Must |
 | FR-9 | Workspace creation provisions: OpenVSCode Server, Git, the AI agent VS Code extension, and Gitea remote config | Must |
 | FR-10 | Resource limits (CPU, memory) are enforced per container | Must |
 
@@ -57,6 +60,9 @@ so that I can start coding without manual setup.
 As a student, I want my workspace to pause when I'm idle and resume where I left off
 so that I don't lose work between sessions.
 
+As a student, I want to reset my workspace to a clean state
+so that I can start fresh without needing to ask a teacher or admin.
+
 As a teacher, I want to pause or destroy a student's workspace
 so that I can enforce project deadlines or free up resources.
 
@@ -68,16 +74,25 @@ so that no single student can starve shared infrastructure.
 
 ```
 [pending] → [running] → [paused] → [running]
-                    └──────────────→ [destroyed]
+               │                      │
+               └──── student reset ───┘ (re-provision: wipe volume, recreate → pending → running)
+               │
+               └──────────────────────→ [destroyed]  (admin/teacher only)
 ```
 
-| Transition | Trigger |
-|---|---|
-| pending → running | Student opens project / workspace created |
-| running → paused | Idle timeout OR manual pause |
-| paused → running | Student resumes session |
-| running → destroyed | Admin/teacher action OR project deadline passed |
-| paused → destroyed | Admin/teacher action |
+| Transition | Trigger | Who |
+|---|---|---|
+| pending → running | Student opens project / workspace created | Student / system |
+| running → paused | Idle timeout OR manual pause | System / student |
+| paused → running | Student resumes session | Student |
+| running/paused → reset | Student confirms re-provision (with unpushed commit warning) | Student only |
+| running/paused → destroyed | Manual action | Admin / teacher only |
+
+**Destruction triggers (exhaustive list):**
+- Admin manually destroys a workspace
+- Teacher manually destroys a workspace (e.g. project deadline closed)
+- Admin deletes a student's account
+- Admin archives a course (bulk destroy of all workspaces in that course)
 
 ## 7. Container Provisioning Checklist
 
@@ -116,11 +131,14 @@ On first creation, each workspace container must include:
 - [ ] A workspace idle for 30 minutes is automatically paused
 - [ ] A destroyed workspace's volume is deleted and cannot be recovered via the UI
 - [ ] No container can reach another container's filesystem or network
+- [ ] A student who resets their workspace sees a warning listing unpushed commits before confirming
+- [ ] After a reset, the workspace re-provisions to a clean state within 30 seconds and Gitea remote is intact
+- [ ] A student cannot destroy their own workspace (destroy action is absent from student UI)
 
 ## 12. Open Questions
 
 - Resource limits have a global default set by admin, overridable per project. Schema: `projects.resource_overrides JSONB` (nullable; falls back to global config if null).
-- [ ] Do we need a "archiving" state between paused and destroyed (e.g. export to zip before deletion)?
+- No archive state. Destruction is always manual (admin/teacher). Before confirming destroy, the UI shows an optional one-click "Export local files as zip" prompt. Students are responsible for pushing work to Gitea before deadline.
 - [ ] How do we handle students who lose network mid-session — grace period before auto-pause?
 
 ## 13. References
