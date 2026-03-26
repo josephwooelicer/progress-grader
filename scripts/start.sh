@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Start all Progress Grader services.
-# Usage: ./scripts/start.sh [--build]
+# Usage:
+#   ./scripts/start.sh           # production
+#   ./scripts/start.sh --dev     # dev mode (hot reload + exposed ports)
+#   ./scripts/start.sh --build   # force rebuild images
+#   ./scripts/start.sh --dev --build
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,23 +24,43 @@ if [[ ! -f .env ]]; then
   fi
 fi
 
-ARGS=()
-if [[ "${1:-}" == "--build" ]]; then
-  ARGS+=(--build)
+DEV=false
+BUILD=false
+for arg in "$@"; do
+  [[ "$arg" == "--dev" ]]   && DEV=true
+  [[ "$arg" == "--build" ]] && BUILD=true
+done
+
+COMPOSE_FILES=(-f docker-compose.yml)
+if $DEV; then
+  COMPOSE_FILES+=(-f docker-compose.dev.yml)
+  echo "▶ Starting in DEV mode (hot reload, exposed ports)..."
+else
+  echo "▶ Starting in production mode..."
 fi
 
-echo "▶ Starting all services..."
-docker compose up -d "${ARGS[@]}"
+UP_ARGS=(-d)
+$BUILD && UP_ARGS+=(--build)
+
+docker compose "${COMPOSE_FILES[@]}" up "${UP_ARGS[@]}"
 
 echo ""
 echo "▶ Running database migrations..."
-# Wait until backend is healthy before migrating
-docker compose exec -T backend alembic upgrade head
+docker compose "${COMPOSE_FILES[@]}" exec -T backend alembic upgrade head
 
 echo ""
 echo "✓ Platform is up."
 echo "  Dashboard : http://localhost"
 echo "  Gitea     : http://gitea.localhost"
 echo "  API docs  : http://localhost/docs"
+if $DEV; then
+  echo ""
+  echo "  Dev ports:"
+  echo "    Backend  : http://localhost:8000"
+  echo "    Proxy    : http://localhost:8001"
+  echo "    Postgres : localhost:5432"
+  echo "    Redis    : localhost:6379"
+  echo "    Minio    : http://localhost:9001 (console)"
+fi
 echo ""
 echo "  Run './scripts/logs.sh' to tail logs."
