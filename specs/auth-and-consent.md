@@ -1,6 +1,6 @@
 # Spec: Authentication and Consent
 
-**Status:** Draft
+**Status:** Approved
 **Author:** —
 **Date:** 2026-03-26
 

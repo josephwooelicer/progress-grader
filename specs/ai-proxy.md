@@ -1,6 +1,6 @@
 # Spec: AI Proxy (Thin Custom Proxy)
 
-**Status:** Draft
+**Status:** Approved
 **Author:** —
 **Date:** 2026-03-26
 
