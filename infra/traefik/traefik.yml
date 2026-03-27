@@ -10,16 +10,8 @@ entryPoints:
 providers:
   docker:
     exposedByDefault: false
-
-# ForwardAuth middleware — all workspace subdomains validate JWT via backend
-http:
-  middlewares:
-    platform-auth:
-      forwardAuth:
-        address: "http://backend:8000/auth/verify"
-        authResponseHeaders:
-          - "X-User-Id"
-          - "X-User-Role"
+  file:
+    filename: /etc/traefik/dynamic.yml
 
 log:
   level: INFO
